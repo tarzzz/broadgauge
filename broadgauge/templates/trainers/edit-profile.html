@@ -1,0 +1,31 @@
+{% from 'forms.html' import render_field %}
+
+{% extends "base.html" %}
+{% block content %}
+<h1>{{user.name}} </h1>
+<h2>Edit Profile:</h2>
+<div style="width:40em;">
+<form action="edit-profile" method="post">	
+<div class="input-group">
+	<span class="input-group-addon">Name</span>
+  {{ form.name(class_='form-control', value=user.name) }}
+  <span class="input-group-addon">Phone Number</span>
+  {{ form.phone(class_='form-control', value=user.phone) }}
+
+  <span class="input-group-addon">City</span>
+  {{ form.city(class_='form-control', value=trainer.city) }}
+</div>
+  <br />
+  <span class="input-group-addon">Website</span>
+  {{ form.website(class_='form-control', value=trainer.website) }}
+  <br />
+  <span class="input-group-addon">Bio</span>
+  {{ form.bio(class_='form-control', value=trainer.website, rows=10) }}
+<br />
+<input style="float:right;" type="submit" class="btn btn-success btn-large" value="Save">
+</div>
+
+</form>
+
+
+{% endblock %}

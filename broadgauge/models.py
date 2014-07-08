@@ -81,6 +81,13 @@ class Trainer(Model):
         result = get_db().select([cls.TABLE, 'users'], what='users.*, trainer.*', where=w)
         return ResultSet(result, model=cls)
 
+    @classmethod
+    def update(cls, id, **kw):
+        print kw
+        get_db().update('trainer', where="userid=1")
+        return cls.find(user_id=id)
+
+
 class Organization(Model):
     TABLE = "organization"
     @classmethod
