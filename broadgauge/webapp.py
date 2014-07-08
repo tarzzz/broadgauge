@@ -193,7 +193,7 @@ class org_view:
         if not org:
             raise web.notfound()
    
-        return render_template("orgs/view.html", org=org,admin=admin.name)
+        return render_template("orgs/view.html", org=org,admin=admin)
 
 class trainers_list:
     def GET(self):
