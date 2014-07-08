@@ -188,9 +188,12 @@ class org_list:
 class org_view:
     def GET(self, id):
         org = Organization.find(id=id)
+        admin = User.find(id = org.admin_id)
+        print admin.name
         if not org:
             raise web.notfound()
-        return render_template("orgs/view.html", org=org)
+   
+        return render_template("orgs/view.html", org=org,admin=admin.name)
 
 class trainers_list:
     def GET(self):
