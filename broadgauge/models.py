@@ -83,9 +83,8 @@ class Trainer(Model):
 
     @classmethod
     def update(cls, id, **kw):
-        print kw
-        get_db().update('trainer', where="userid=1")
-        return cls.find(user_id=id)
+        get_db().update('trainer', kw, where="user_id=" + str(id))
+        return cls.where(user_id=id)
 
 
 class Organization(Model):
