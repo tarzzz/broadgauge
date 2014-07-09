@@ -88,8 +88,6 @@ class Organization(Model):
         id = get_db().insert("organization", name=name, city=city, admin_id=admin_user.id, admin_role=role)
         return cls.find(id=id)
 
-    @classmethod
-    def get_admin(cls, id):
-        admin_id = cls.find(id=id).admin_id
-        return User.find(id=admin_id)
+    def get_admin(self):
+        return User.find(id=self.admin_id)
 
