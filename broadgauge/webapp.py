@@ -16,7 +16,7 @@ urls = (
     "/login", "login",
     "/dashboard", "dashboard",
     "/trainers/signup", "trainer_signup",
-    "/trainers/edit-profile", "edit_trainer_profile",
+    "/settings/profile", "edit_trainer_profile",
     "(/trainers/signup|/orgs/signup|/login)/reset", "signup_reset",
     "(/trainers/signup|/orgs/signup|/login)/(github|google)", "signup_redirect",
     "/oauth/(github|google)", "oauth_callback",
