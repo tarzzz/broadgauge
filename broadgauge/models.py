@@ -91,5 +91,5 @@ class Organization(Model):
     @classmethod
     def get_admin(cls, id):
         admin_id = cls.find(id=id).admin_id
-        return User.find(id=admin_id).name
+        return User.find(id=admin_id)
 
