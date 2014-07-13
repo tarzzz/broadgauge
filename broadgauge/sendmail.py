@@ -28,12 +28,12 @@ def sendmail(template, **kwargs):
     
     Example:
     >>> from sendmail import sendmail
-    >>> sendmail("templates/emails/trainers/welcome.html",to=
+    >>> sendmail("emails/trainers/welcome.html",to=
                                ..."some_email.com",variable1=var,variable2=var2)
     Email sent to some_email.com
     """
-
-    template_loader = jinja2.FileSystemLoader(".")
+    template_path = os.path.join(os.path.dirname(__file__),"templates")
+    template_loader = jinja2.FileSystemLoader(template_path)
     env = jinja2.Environment(loader=template_loader)
     unparsed_template = env.get_template(template)
     send_to = kwargs.pop("to")
@@ -48,5 +48,4 @@ def sendmail(template, **kwargs):
 
     mandrill_client = mandrill.Mandrill(default_settings.mandrill_secret) 
     result = mandrill_client.messages.send(message=msg)
-    print "Email to %s"%send_to
-    print "Status:%s"%result
+    return result

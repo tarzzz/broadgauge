@@ -7,7 +7,7 @@ from . import forms
 from .models import Trainer, User, Organization
 from .template import render_template, context_processor
 from .flash import flash_processor, flash, get_flashed_messages
-from .sendmail import send_welcome_mail
+from .sendmail import sendmail
 # web.config.debug = False
 
 urls = (
@@ -149,7 +149,7 @@ class trainer_signup:
             city=i.city,
             github=userdata.get('github'))
         account.set_login_cookie(user.email)
-        send_welcome_mail(user)
+        sendmail("emails/trainers/welcome.html",to=user.email,trainer=user)
         raise web.seeother("/dashboard")
 
     def find_user(self, email):
