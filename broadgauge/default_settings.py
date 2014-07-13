@@ -11,4 +11,4 @@ google_client_secret = 'CI8Pl4jSmsK5gbFRa9dfio1E'
 
 db_parameters = dict(dbn='postgres', db='pythonexpress')
 
-mandrill_Secret = 
+mandrill_Secret = "HPz_MLBYRAnqHhQzCIU9Mg"
