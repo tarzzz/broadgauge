@@ -1,9 +1,7 @@
-import mandrill
+from envelopes import Envelope
+
+from .template import render_template
 import default_settings
-
-
-import os
-import jinja2
 
 def sendmail(template, **kwargs):
     """
@@ -23,29 +21,24 @@ def sendmail(template, **kwargs):
     to: str
     Recipient's email
     
+    sub: str
+    Subject of the mail
+
     P.S: Other keywords are sent to Jinja Templating Language for 
     direct parsing, as it is.
     
     Example:
     >>> from sendmail import sendmail
-    >>> sendmail("emails/trainers/welcome.html",to=
-                               ..."some_email.com",variable1=var,variable2=var2)
+    >>> sendmail("emails/trainers/welcome.html",to=..."some_email.com", 
+                               sub="Hey Friend!", variable1=var, variable2=var2)
     Email sent to some_email.com
     """
-    template_path = os.path.join(os.path.dirname(__file__),"templates")
-    template_loader = jinja2.FileSystemLoader(template_path)
-    env = jinja2.Environment(loader=template_loader)
-    unparsed_template = env.get_template(template)
-    send_to = kwargs.pop("to")
-    parsed_template = unparsed_template.render(**kwargs)
-
-    # Set up email msg:
-    msg = {}
-    msg["html"]= parsed_template
-    msg["subject"]= "Signup notification for PythonExpress"
-    msg["from_email"] = "tarun.gaba7@gmail.com"
-    msg["to"] = [{'email': send_to }]
-
-    mandrill_client = mandrill.Mandrill(default_settings.mandrill_secret) 
-    result = mandrill_client.messages.send(message=msg)
+    
+    envelope = Envelope(
+        from_addr=default_settings.from_email,
+        to_addr=kwargs.pop('to'),
+        subject=kwargs.pop('subject'),
+        html_body=render_template(template, **kwargs)
+    )
+    result = envelope.send(default_settings.smtp, **default_settings.smtp_credentials)
     return result
