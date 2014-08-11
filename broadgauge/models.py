@@ -62,37 +62,111 @@ class User(Model):
     TABLE = "users"
 
     @classmethod
-    def new(cls, name, email, phone=None):
-        id = get_db().insert("users", name=name, email=email, phone=phone)
+    def new(cls, name, email, phone=None, **kw):
+        id = get_db().insert("users", name=name, email=email, phone=phone, **kw)
         return cls.find(id=id)
 
+    def update(self, **kw):
+        get_db().update("users", where='id=$id', vars=self, **kw)
+        dict.update(self, kw)
 
-class Trainer(Model):
-    """Model class for Trainer.
-    """
-    TABLE = "trainer"
+    def make_trainer(self):
+        self.update(is_trainer=True)
 
-    @classmethod
-    def new(cls, name, email, phone, city, **kw):
-        id = get_db().insert("users", name=name, email=email, phone=phone)
-        get_db().insert('trainer', user_id=id, city=city, seqname=False, **kw)
-        return cls.find(id=id)
+    def is_trainer(self):
+        return self['is_trainer']
 
-    @classmethod
-    def where(cls, **kw):
-        w = 'user_id=users.id'
-        if kw:
-            w = w + ' AND ' + web.db.sqlwhere(kw)
-        result = get_db().select([cls.TABLE, 'users'],
-                                 what='users.*, trainer.*', where=w)
-        return ResultSet(result, model=cls)
-
+    def is_admin(self):
+        return self['is_admin']
 
 class Organization(Model):
     TABLE = "organization"
 
     @classmethod
-    def new(cls, name, city, admin_user, role):
-        id = get_db().insert("organization", name=name, city=city,
-                             admin_id=admin_user.id, admin_role=role)
+    def new(cls, name, city):
+        id = get_db().insert("organization", name=name, city=city)
         return cls.find(id=id)
+
+    def add_member(self, user, role):
+        get_db().insert("organization_members", org_id=self.id, user_id=user.id, role=role)
+
+    def get_workshops(self, status=None):
+        """Returns list of workshops by this organiazation.
+        """
+        wheres = {}
+        if status:
+            wheres['status'] = status
+        return Workshop.findall(org_id=self.id, order='date desc', **wheres)
+
+    def add_new_workshop(self, title, description,
+                         expected_participants, date):
+        return Workshop.new(self, title, description,
+                            expected_participants, date)
+
+    def is_admin(self, email):
+        """Returns True of given email is an admin of this org.
+        """
+        if not email:
+            return False
+
+        # Admin user is admin of every org
+        if web.config.get('admin_user') == email:
+            return True
+
+        admin = self.get_admin()
+        if admin and admin.email == email:
+            return True
+
+        return False
+
+    def is_member(self, user):
+        result = get_db().query(
+            "SELECT * FROM organization_members" +
+            " WHERE org_id=$self.id AND user_id=$user.id",
+            vars=locals())
+        return bool(result)
+
+    def get_members(self):
+        result = get_db().query(
+            "SELECT users.*, role FROM users" +
+            " JOIN organization_members ON organization_members.user_id=users.id" +
+            " WHERE organization_members.org_id=$self.id", vars=locals())
+
+        def make_member(row):
+            role = row.pop('role')
+            member = User(row)
+            return member, role
+
+        return [make_member(row) for row in result]
+
+class Workshop(Model):
+    TABLE = "workshop"
+
+    @classmethod
+    def new(cls, org, title, description, expected_participants, date):
+        id = get_db().insert("workshop",
+                             org_id=org.id,
+                             title=title,
+                             description=description,
+                             expected_participants=expected_participants,
+                             date=date)
+        return cls.find(id=id)
+
+    def get_org(self):
+        return Organization.find(id=self.org_id)
+
+    def record_interest(self, trainer):
+        """Record that the given trainer has shown interest to conduct
+        the this workshop.
+        """
+        get_db().insert("workshop_trainers", workshop_id=self.id, trainer_id=trainer.id)
+
+    def get_interested_trainers(self):
+        db = get_db()
+        rows = db.where("workshop_trainers", workshop_id=self.id)
+        ids = [row.trainer_id for row in rows]
+        if ids:
+            rows = db.query("SELECT * FROM users WHERE id IN $ids", vars={"ids": ids})
+            return [User(row) for row in rows]
+        else:
+            return []

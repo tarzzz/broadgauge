@@ -4,10 +4,13 @@ import json
 from . import account
 from . import oauth
 from . import forms
-from .models import Trainer, User, Organization
+from .models import User, Organization, Workshop
 from .template import render_template, context_processor
 from .flash import flash_processor, flash, get_flashed_messages
 from .sendmail import sendmail
+from .views import admin
+
+
 # web.config.debug = False
 
 urls = (
@@ -16,41 +19,50 @@ urls = (
     "/login", "login",
     "/dashboard", "dashboard",
     "/trainers/signup", "trainer_signup",
+    "/settings/profile", "edit_trainer_profile",
     "(/trainers/signup|/orgs/signup|/login)/reset", "signup_reset",
     "(/trainers/signup|/orgs/signup|/login)/(github|google)", "signup_redirect",
     "/oauth/(github|google)", "oauth_callback",
     "/orgs/signup", "org_signup",
+    "/orgs/(\d+)/new-workshop", "new_workshop",
+    "/orgs/(\d+)/add-member", "org_new_member",
     "/orgs/(\d+)", "org_view",
     "/orgs", "org_list",
     "/trainers", "trainers_list",
     "/trainers/(\d+)", "trainer_view",
+    "/workshops/(\d+)", "workshop_view",
+    "/workshops/(\d+)/express-interest", "workshop_experss_interest",
 )
+urls += admin.urls
+
 app = web.application(urls, globals())
 app.add_processor(flash_processor)
 
-
 @context_processor
 def inject_user():
-    user_email = account.get_current_user()
-    # User could be either a trainer or org admin
-    # The current DB schema is not flexible enough to handle that.
-    # TODO: Fix the schema
-    user = user_email and User.find(email=user_email)
+    user = account.get_current_user()
     return {
         'user': user,
+        'request_path': web.ctx.path,
         'site_title': web.config.get('site_title', 'Broad Gauge'),
-        'get_flashed_messages': get_flashed_messages
+        'get_flashed_messages': get_flashed_messages,
+        'get_pending_workshops': lambda: Workshop.findall(status='pending'),
+        'get_confirmed_workshops': lambda: Workshop.findall(status='confirmed'),
     }
-
 
 class home:
     def GET(self):
-        email = account.get_current_user()
-        user = User.find(email=email)
+        user = account.get_current_user()
         if user:
             raise web.seeother("/dashboard")
         else:
-            return render_template("home.html")
+            pending_workshops = Workshop.findall(status='pending')
+            upcoming_workshops = Workshop.findall(status='confirmed')
+            completed_workshops = Workshop.findall(status='completed')
+            return render_template("home.html",
+                pending_workshops=pending_workshops,
+                upcoming_workshops=upcoming_workshops,
+                completed_workshops=completed_workshops)
 
 
 class dashboard:
@@ -77,7 +89,7 @@ class oauth_callback:
             userdata = client.get_userdata(i.code)
             if userdata:
                 # login or signup
-                t = Trainer.find(email=userdata['email'])
+                t = User.find(email=userdata['email'])
                 if t:
                     account.set_login_cookie(t.email)
                     raise web.seeother("/dashboard")
@@ -124,9 +136,10 @@ class trainer_signup:
             # if already logged in, send him to dashboard
             user = self.find_user(email=userdata['email'])
             if user:
+                if not user.is_trainer():
+                    user.make_trainer()
                 account.set_login_cookie(user.email)
                 raise web.seeother("/dashboard")
-
             form.name.value = userdata['name']
         return render_template(self.TEMPLATE, form=form, userdata=userdata)
 
@@ -142,18 +155,42 @@ class trainer_signup:
         return self.signup(i, userdata)
 
     def signup(self, i, userdata):
-        user = Trainer.new(
+        user = User.new(
             name=i.name,
             email=userdata['email'],
             phone=i.phone,
             city=i.city,
-            github=userdata.get('github'))
+            github=userdata.get('github'),
+            is_trainer=True)
         account.set_login_cookie(user.email)
         sendmail("emails/trainers/welcome.html",to=user.email,trainer=user)
         raise web.seeother("/dashboard")
 
     def find_user(self, email):
-        return Trainer.find(email=email)
+        return User.find(email=email)
+
+
+class edit_trainer_profile:
+    FORM = forms.TrainerEditProfileForm
+    TEMPLATE = "trainers/edit-profile.html"
+    def GET(self):
+        user = account.get_current_user()
+        if not user or not user.is_trainer():
+            raise web.seeother("/")
+        form = forms.TrainerEditProfileForm(user)
+        return render_template(self.TEMPLATE, form=form, user=user)
+
+    def POST(self):
+        user = account.get_current_user()
+        if not user or not user.is_trainer():
+            raise web.seeother("/")
+        i = web.input()
+        form = self.FORM(i)
+        if not form.validate():
+            return render_template(self.TEMPLATE, form=form, user=user)
+        else:
+            user.update(name=i.name, city=i.city, phone=i.phone, website=i.website, bio=i.bio)
+            raise web.seeother("/dashboard")
 
 
 class org_signup(trainer_signup):
@@ -165,8 +202,12 @@ class org_signup(trainer_signup):
         return None
 
     def signup(self, i, userdata):
-        user = User.find(email=userdata['email']) or User.new(name=userdata['name'], email=userdata['email'])
-        org = Organization.new(name=i.name, city=i.city, admin_user=user, role=i.role)
+        user = User.find(email=userdata['email'])
+        if not user:
+            user = User.new(name=userdata['name'], email=userdata['email'])
+        org = Organization.new(name=i.name,
+                               city=i.city)
+        org.add_member(user, i.role)
         account.set_login_cookie(user.email)
         raise web.seeother("/orgs/{}".format(org.id))
 
@@ -205,18 +246,114 @@ class org_view:
         org = Organization.find(id=id)
         if not org:
             raise web.notfound()
+
         return render_template("orgs/view.html", org=org)
+
+class org_new_member:
+    def GET(self, id):
+        org = self.get_org(id)
+        if not self.can_update(org):
+            return render_template("permission_denied")
+        else:
+            form = forms.OrgAddMemberForm()
+            return render_template("orgs/new-member.html", org=org, form=form)
+
+    def POST(self, id):
+        org = self.get_org(id)
+        if not self.can_update(org):
+            return render_template("permission_denied")
+        else:
+            i = web.input()
+            form = forms.OrgAddMemberForm(i)
+            if not form.validate():
+                return render_template("orgs/new-member.html", org=org, form=form)
+            else:
+                member = User.find(email=i.email)
+                org.add_member(member, i.role)
+                flash("Successfully added {} as member.".format(member.name))
+                raise web.seeother("/orgs/{}".format(org.id))
+
+    def get_org(self, id):
+        org = Organization.find(id=id)
+        if not org:
+            raise web.notfound()
+        return org
+
+    def can_update(self, org):
+        """Returns True if the current user can update the given org.
+        """
+        user = account.get_current_user()
+        return user and (user.is_admin() or org.is_member(user))
 
 
 class trainers_list:
     def GET(self):
-        trainers = Trainer.findall()
+        trainers = User.findall(is_trainer=True)
         return render_template("trainers/index.html", trainers=trainers)
 
 
 class trainer_view:
     def GET(self, id):
-        trainer = Trainer.find(user_id=id)
+        trainer = User.find(id=id, is_trainer=True)
         if not trainer:
             raise web.notfound()
         return render_template("trainers/view.html", trainer=trainer)
+
+
+class new_workshop:
+    def GET(self, org_id):
+        org = Organization.find(id=org_id)
+        if not org:
+            raise web.notfound()
+
+        if not org.is_member(account.get_current_user()):
+            return render_template("permission_denied.html")
+
+        form = forms.NewWorkshopForm()
+        return render_template("workshops/new.html", org=org, form=form)
+
+    def POST(self, org_id):
+        org = Organization.find(id=org_id)
+        if not org:
+            raise web.notfound()
+        if not org.is_member(account.get_current_user()):
+            return render_template("permission_denied.html")
+
+        i = web.input()
+        form = forms.NewWorkshopForm(i)
+        if not form.validate():
+            return render_template("workshops/new.html", org=org, form=form)
+        workshop = org.add_new_workshop(
+            title=form.title.data,
+            description=form.description.data,
+            expected_participants=form.expected_participants.data,
+            date=form.preferred_date.data)
+        return web.seeother("/workshops/{}".format(workshop.id))
+
+
+class workshop_view:
+    def GET(self, id):
+        workshop = Workshop.find(id=id)
+        if not workshop:
+            raise web.notfound()
+        return render_template("workshops/view.html", workshop=workshop)
+
+    def POST(self, id):
+        workshop = Workshop.find(id=id)
+        if not workshop:
+            raise web.notfound()
+
+        i = web.input(action=None)
+        if i.action == "express-interest":
+            return self.POST_express_interest(workshop, i)
+        else:
+            return render_template("workshops/view.html", workshop=workshop)
+
+    def POST_express_interest(self, workshop, i):
+        user = account.get_current_user()
+        if user and user.is_trainer():
+            workshop.record_interest(user)
+            flash("Thank you for experessing interest to conduct this workshop.")
+            raise web.seeother("/workshops/{}".format(workshop.id))
+        else:
+            return render_template("workshops/view.html", workshop=workshop)

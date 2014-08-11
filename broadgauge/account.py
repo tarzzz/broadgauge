@@ -4,6 +4,7 @@ import web
 import datetime
 import time
 
+from .models import User
 
 def get_secret_key():
     return web.config.secret_key
@@ -33,6 +34,7 @@ def set_login_cookie(email):
 
 def logout():
     web.setcookie("session", "", expires=-1)
+    web.setcookie("oauth", "", expires=-1)
 
 
 def get_current_user():
@@ -49,4 +51,4 @@ def _get_current_user():
         return
 
     if check_salted_hash(email + "," + login_time, digest):
-        return email
+        return User.find(email=email)
